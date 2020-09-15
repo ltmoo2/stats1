@@ -1,0 +1,349 @@
+---
+title: "Assignment-1"
+author: "Lachlan Moody 27809951"
+date: "11/09/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, 
+                      eval=TRUE, 
+                      warning = FALSE, 
+                      message = FALSE, 
+                      error = FALSE, 
+                      tidy.opts = list(width.cutoff=60), 
+                      tidy=TRUE)
+
+
+library(tidyverse)
+library(broom)
+library(kableExtra)
+library(NHANES)
+options(digits = 6)
+```
+
+```{r data}
+options(digits = 6)
+
+dt <- NHANES %>% 
+  distinct(ID, .keep_all = TRUE)
+
+dt <- dt %>% 
+  filter(Age >= 18) %>% 
+  dplyr::select(Gender, 
+                Age, 
+                HomeOwn, 
+                BPSysAve, 
+                BPSys2, 
+                BPSys3)
+
+dt <- dt %>% 
+  drop_na()
+
+dt1 <- dt %>% 
+  mutate(Age = as.numeric(Age), 
+         BPSysAve = as.numeric(BPSysAve),
+         BPSys2 = as.numeric(BPSys2), 
+         BPSys3 = as.numeric(BPSys3))
+```
+
+### Question 1
+#### Q1.a
+```{r 1a}
+dt1 %>%
+  pivot_longer(cols = BPSys2:BPSys3, names_to = "Reading") %>%
+  ggplot(aes(x = value, y = ..density.., fill = Reading)) +
+  geom_density(alpha = 0.2)  +
+  theme_bw() +
+  labs(x = "", y = "") +
+  ggtitle("Sampling distribution of BPSys2 and BPSys3")
+
+```
+
+
+
+#### Q1.b
+```{r 1b}
+dt1_diff <- dt1 %>%
+  mutate(Diff = BPSys3 - BPSys2)
+
+dt1_diff %>%
+  ggplot(aes(x = Diff, y= ..density..)) +
+  geom_histogram(colour = "magenta", fill = "magenta", alpha = .2) +
+  geom_density(colour = "magenta", fill = "magenta", alpha = .2) +
+  geom_vline(xintercept = mean(dt1_diff$Diff), colour = "black") +
+  annotate("text", x = 5, y = .1, label = "Mean difference", colour = "black") +
+  theme_bw() +
+  labs(x = "", y = "") +
+  ggtitle("Sampling distribtuion of BPSys3-BPSys2 difference")
+```
+
+
+
+#### Q1.c
+```{r 1c}
+summary <- dt1_diff %>%
+  pivot_longer(cols = BPSys2:Diff, names_to = "Reading") %>%
+  group_by(Reading) %>%
+  summarise(Obs = n(),
+            Mean = mean(value),
+            SD = sd(value),
+            Min = min(value),
+            Q1 = quantile(value, 0.25),
+            Median = median(value),
+            Q3 = quantile(value, .75),
+            Max = max(value))
+
+summary %>%
+  kable(format.args = list(digits = 2, big.mark = ","), caption = "Summary of BPSys2 and BPSys3 readings") %>%
+  kable_styling(bootstrap_options = c("bordered", "striped"))
+```
+
+
+
+#### Q1.d
+```{r 1dCI}
+set.seed(1000)
+
+n <- nrow(dt1_diff)
+B <- 5000
+
+xbar_boot <- rep(NA, B)
+for (i in 1:B) {
+    temp <- sample(dt1_diff$Diff, size = n, replace = TRUE)
+    xbar_boot[i] <- mean(temp)
+}
+
+boot.CI <- quantile(xbar_boot, c(0.025, 0.975))
+boot.CI
+```
+
+```{r 1dPlot}
+bootplot.f <- function(stat.boot, bins = 50) {
+    df <- tibble(stat = stat.boot)
+    CI <- round(quantile(stat.boot, c(0.025, 0.975)), 2)
+    p <- df %>% ggplot(aes(x = stat, y = ..density..)) + geom_histogram(bins = bins, 
+        colour = "magenta", fill = "magenta", alpha = 0.2) + 
+        geom_density(fill = "magenta", colour = "magenta", alpha = 0.2) + 
+        geom_vline(xintercept = CI, colour = "magenta", linetype = 3) + 
+        theme_bw() +
+      labs(x = "", y = "")
+    p
+}
+
+p_xbarboot <- bootplot.f(xbar_boot, bins = 100)
+
+p_xbarboot +
+  geom_vline(xintercept = mean(dt1_diff$Diff)) + 
+  annotate("text", label = round(boot.CI[1], 2), x = (boot.CI[1] - 0.05), y = 5, colour = "magenta") + 
+  annotate("text", label = round(boot.CI[2], 2), x = (boot.CI[2] + 0.05), y = 5, colour = "magenta")  +
+  annotate("text", x = -.66, y = 5.2, label = "Mean difference") +
+  ggtitle("Bootstrap-based approximate sampling distribution of BPSys3-BPSys2 difference")
+```
+
+
+#### Q1.e
+```{r 1e}
+ttest <- t.test(x = dt1_diff$Diff) %>%
+  tidy()
+
+ttest %>%
+  select(conf.low, conf.high) %>%
+  kable(caption = "CLT Estimates for BPSys3-BPSys2 difference", format.args = list(digits = 4)) %>%
+  kable_styling(bootstrap_options = c("bordered", "striped"))
+```
+
+
+
+#### Q1.f
+- Not independent as BPSys 2 and BPSys 3 and consecutive readings off the same measure, systolic blood pressure, taken from the same person. Thus it is reasonable to assume that the any prior reading would impact on a future reading.
+
+
+### Question 2
+#### Q2.a
+```{r 2a}
+dt1_home <- dt1 %>%
+  filter(HomeOwn %in% c("Own", "Rent")) %>%
+  select(Gender, Age, HomeOwn, BPSysAve)
+
+dt1_home %>%
+  ggplot(aes(x = BPSysAve, y = ..density.., fill = HomeOwn)) +
+  geom_density(alpha = 0.2)  +
+  theme_bw() +
+  labs(y = "") +
+  ggtitle("Sampling distribution of BPSysAve for owners against renters")
+```
+
+
+
+#### Q2.b
+```{r 2b}
+summary <- dt1_home %>%
+  group_by(HomeOwn) %>%
+  summarise(Obs = n(),
+            Mean = mean(BPSysAve),
+            SD = sd(BPSysAve),
+            Min = min(BPSysAve),
+            Q1 = quantile(BPSysAve, 0.25),
+            Median = median(BPSysAve),
+            Q3 = quantile(BPSysAve, .75),
+            Max = max(BPSysAve))
+
+summary %>%
+  kable(format.args = list(digits = 4, big.mark = ","), caption = "Summary of BPSysAve for owners against renters") %>%
+  kable_styling(bootstrap_options = c("bordered", "striped"))
+```
+
+
+
+#### Q2.c
+```{r 2c}
+own <- dt1_home %>%
+  filter(HomeOwn == "Own") %>%
+  pull(BPSysAve) %>%
+  as.numeric()
+
+rent <- dt1_home %>%
+  filter(HomeOwn == "Rent") %>%
+  pull(BPSysAve) %>%
+  as.numeric()
+
+ttest <- t.test(x = own, y = rent) %>%
+  tidy()
+
+ttest %>%
+  select(estimate,
+         p.value,
+         lower = conf.low,
+         upper = conf.high) %>%
+  kable(caption = "CLT estimates of BPSysAve for owners against renters", format.args = list(digits = 4)) %>%
+  kable_styling(bootstrap_options = c("bordered"))
+```
+
+
+
+#### Q2.d
+```{r 2d, eval=FALSE}
+# Code chunk for Q2 part d.
+
+dt2 <- dt %>% filter(HomeOwn!="Other")
+n # student to add
+R # student to add
+
+# student to add
+# student to add
+
+Rdt2 <- dt2
+
+for (r in 1:R){
+  Rdt2 <- Rdt2 %>% mutate(BPSysAve=sample(dt2$BPSysAve, n, replace=FALSE))
+  Rdt2S <- Rdt2 %>% group_by(HomeOwn) %>% summarise(mean=mean(BPSysAve)) 
+  RDiff[r] <- Rdt2S %>% summarise(Diff=mean[1]-mean[2]) 
+}
+
+
+# student to add additional lines
+```
+
+
+
+#### Q2.e
+```{r 2e}
+dt2 <- dt %>% filter(HomeOwn!="Other")
+n = nrow(dt2)
+R = 1000
+
+# student to add
+# student to add
+
+RDiff <- array(dim = R)
+set.seed(1000)
+
+Rdt2 <- dt2
+
+for (r in 1:R){
+  Rdt2 <- Rdt2 %>% mutate(BPSysAve=sample(dt2$BPSysAve, n, replace=FALSE))
+  Rdt2S <- Rdt2 %>% group_by(HomeOwn) %>% summarise(mean=mean(BPSysAve)) 
+  RDiff[r] <- Rdt2S %>% summarise(Diff=mean[1]-mean[2]) 
+}
+
+# student to add additional lines
+RDiff <- as.data.frame(RDiff) %>%
+  pivot_longer(cols = 1:1000) %>%
+  select(value)
+
+xobs <- summary$Mean[1] - summary$Mean[2]
+
+
+
+pval <- RDiff %>%
+  filter(abs(value) >= abs(xobs)) %>%
+  nrow()/R
+
+pval
+
+RDiff %>%
+  ggplot(aes(value)) +
+  geom_histogram(bins = 100, colour = "magenta", fill = "magenta", alpha = 0.2) +
+  geom_vline(xintercept = xobs, colour = "red") +
+  annotate("text", x = xobs-.5, y = 60, label = round(xobs, digits = 3), colour = "red") +
+  geom_vline(xintercept = -xobs, colour = "red") +
+  annotate("text", x = -xobs+.5, y = 60, label = round(-xobs, digits = 3), colour = "red")  +
+  labs(x = "",y = "") +
+  ggtitle("BPSysAve difference for owners relative to renters") +
+  theme_bw()
+```
+
+
+
+#### Q2.f
+```{r}
+dt2 <- dt %>% filter(HomeOwn!="Other",
+                     Gender == "male",
+                     Age >=35 & Age <= 44)
+n = nrow(dt2)
+R = 1000
+
+# student to add
+# student to add
+
+RDiff <- array(dim = R)
+set.seed(1000)
+
+Rdt2 <- dt2
+
+for (r in 1:R){
+  Rdt2 <- Rdt2 %>% mutate(BPSysAve=sample(dt2$BPSysAve, n, replace=FALSE))
+  Rdt2S <- Rdt2 %>% group_by(HomeOwn) %>% summarise(mean=mean(BPSysAve)) 
+  RDiff[r] <- Rdt2S %>% summarise(Diff=mean[1]-mean[2]) 
+}
+
+# student to add additional lines
+RDiff <- as.data.frame(RDiff) %>%
+  pivot_longer(cols = 1:1000) %>%
+  select(value)
+
+diff <-  dt2 %>%
+  group_by(HomeOwn) %>%
+  summarise(avg = mean(BPSysAve))
+
+xobs <- diff$avg[1] - diff$avg[2]
+
+pval <- RDiff %>%
+  filter(abs(value) >= abs(xobs)) %>%
+  nrow()/R
+
+pval
+
+RDiff %>%
+  ggplot(aes(value)) +
+  geom_histogram(bins = 100, colour = "magenta", fill = "magenta", alpha = 0.2) +
+  geom_vline(xintercept = xobs, colour = "red") +
+  annotate("text", x = xobs - .5, y = 30, label = round(xobs, digits = 3), colour = "red") +
+  geom_vline(xintercept = -xobs, colour = "red") +
+  annotate("text", x = abs(xobs) + .5, y = 30, label = round(abs(xobs), digits = 3), colour = "red") +
+  labs(x = "",y = "") +
+  ggtitle("BPSysAve difference for owners relative to renters for males aged 35-44") +
+  theme_bw()
+```
+
